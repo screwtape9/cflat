@@ -8,3 +8,8 @@ if (fops.GetUID(user, out uid))
 {
     Console.WriteLine("{0}'s uid: {1}", user, uid);
 }
+
+if (!fops.Chmod("/home/jlebowski/csharp/cave", 644, true, true))
+{
+    Console.WriteLine("Hmmm... chmod failed.");
+}

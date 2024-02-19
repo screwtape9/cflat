@@ -24,21 +24,30 @@ public interface IFileOps
     /// <summary>
     /// Changes the user and group ownership of <paramref name="filepath"/>.
     /// </summary>
-    /// <remarks></remarks>
-    /// <param name="username"></param>
-    /// <param name="groupname"></param>
-    /// <param name="filepath"></param>
-    /// <param name="recurse"></param>
+    /// <remarks>
+    /// It is possible for this function to return false, if <paramref name="recurse"/> was true, but it encountered a file for which
+    /// the calling user/process did not have permission to change. In this case, all files that were able to be chown'd were probably
+    /// chown'd, but false will be returned becasue it was unable to chown them all.
+    /// </remarks>
+    /// <param name="username">The username of the new owner.</param>
+    /// <param name="groupname">The groupname of the new group.</param>
+    /// <param name="filepath">The file or directory path to change.</param>
+    /// <param name="recurse">If true, and <paramref name="filepath"/> is a directory, recurse through all subdirectories and files.</param>
     /// <returns></returns>
     bool Chown(string username, string groupname, string filepath, bool recurse = false);
 
     /// <summary>
     /// Changes the file mode bits of <paramref name="pathname"/> according to <paramref name="mode"/>.
     /// </summary>
-    /// <remarks></remarks>
+    /// <remarks>
+    /// It is possible for this function to return false, if <paramref name="recurse"/> was true, but it encountered a file for which
+    /// the calling user/process did not have permission to change. In this case, all files that were able to be chmoe'd were probably
+    /// chmoe'd, but false will be returned becasue it was unable to chmod them all.
+    /// </remarks>
     /// <param name="pathname">The file or directory path to change.</param>
     /// <param name="mode">Octal number representing the bit pattern for the new mode bits. Ex. 755</param>
-    /// <param name="recurse"></param>
+    /// <param name="recurse">If true, and <paramref name="pathname"/> is a directory, recurse through all subdirectories and files.</param>
+    /// <param name="omitDirectories">Don't chmod directories when recursively chmod'ing.</param>
     /// <returns></returns>
-    bool Chmod(string pathname, uint mode, bool recurse = false);
+    bool Chmod(string pathname, uint mode, bool recurse = false, bool omitDirectories = false);
 }

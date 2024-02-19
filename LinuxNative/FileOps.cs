@@ -10,7 +10,15 @@ public class FileOps : IFileOps
     {
         uid = 0;
         int sz = Marshal.SizeOf(typeof(LibC.StructPasswd));
-        IntPtr resultBuf = Marshal.AllocHGlobal(sz);
+        IntPtr resultBuf;
+        try
+        {
+            resultBuf = Marshal.AllocHGlobal(sz);
+        }
+        catch (Exception)
+        {
+            return false;
+        }
         byte[] buffer = ArrayPool<byte>.Shared.Rent(1024);
         IntPtr result = IntPtr.Zero;
 
@@ -19,31 +27,33 @@ public class FileOps : IFileOps
                                 buffer,
                                 Convert.ToUInt64(buffer.Length),
                                 ref result);
-        if (n != 0)
+        if ((n != 0) || (result == IntPtr.Zero))
         {
             Marshal.FreeHGlobal(resultBuf);
-            resultBuf = IntPtr.Zero;
-            Console.WriteLine(string.Format("getpwnam_r() returned {0}", n));
+            ArrayPool<byte>.Shared.Return(buffer);
+            Console.WriteLine((n != 0) ? string.Format("getpwnam_r() returned {0}", n) : "getpwnam_r() found no results");
             return false;
         }
 
-        if (result == IntPtr.Zero)
+        bool retval = false;
+        try
         {
-            Marshal.FreeHGlobal(resultBuf);
-            resultBuf = IntPtr.Zero;
-            Console.WriteLine("getpwnam_r() found no results");
-            return false;
+#pragma warning disable CS8605 // Unboxing a possibly null value.
+            LibC.StructPasswd entry =
+                (LibC.StructPasswd)Marshal.PtrToStructure(resultBuf,
+                                                          typeof(LibC.StructPasswd));
+#pragma warning restore CS8605 // Unboxing a possibly null value.
+            uid = entry.pw_uid;
+            retval = true;
         }
-
-        LibC.StructPasswd entry =
-            (LibC.StructPasswd)Marshal.PtrToStructure(resultBuf,
-                                                      typeof(LibC.StructPasswd));
-        uid = entry.pw_uid;
+        catch (Exception)
+        {
+        }
 
         Marshal.FreeHGlobal(resultBuf);
-        resultBuf = IntPtr.Zero;
+        ArrayPool<byte>.Shared.Return(buffer);
 
-        return true;
+        return retval;
     }
 
     /// <inheritdoc/>
@@ -51,7 +61,15 @@ public class FileOps : IFileOps
     {
         gid = 0;
         int sz = Marshal.SizeOf(typeof(LibC.StructGroup));
-        IntPtr resultBuf = Marshal.AllocHGlobal(sz);
+        IntPtr resultBuf;
+        try
+        {
+            resultBuf = Marshal.AllocHGlobal(sz);
+        }
+        catch (Exception)
+        {
+            return false;
+        }
         byte[] buffer = ArrayPool<byte>.Shared.Rent(1024);
         IntPtr result = IntPtr.Zero;
 
@@ -60,43 +78,95 @@ public class FileOps : IFileOps
                                 buffer,
                                 Convert.ToUInt64(buffer.Length),
                                 ref result);
-        if (n != 0)
+        if ((n != 0) || (result == IntPtr.Zero))
         {
             Marshal.FreeHGlobal(resultBuf);
-            resultBuf = IntPtr.Zero;
-            Console.WriteLine(string.Format("getgrnam_r() returned {0}", n));
+            ArrayPool<byte>.Shared.Return(buffer);
+            Console.WriteLine((n != 0) ? string.Format("getgrnam_r() returned {0}", n) : "getgrnam_r() found no results");
             return false;
         }
 
-        if (result == IntPtr.Zero)
+        bool retval = false;
+        try
         {
-            Marshal.FreeHGlobal(resultBuf);
-            resultBuf = IntPtr.Zero;
-            Console.WriteLine("getgrnam_r() found no results");
-            return false;
+#pragma warning disable CS8605 // Unboxing a possibly null value.
+            LibC.StructGroup entry =
+                (LibC.StructGroup)Marshal.PtrToStructure(resultBuf,
+                                                         typeof(LibC.StructGroup));
+#pragma warning restore CS8605 // Unboxing a possibly null value.
+            gid = entry.gr_gid;
+            retval = true;
         }
-
-        LibC.StructGroup entry =
-            (LibC.StructGroup)Marshal.PtrToStructure(resultBuf,
-                                                     typeof(LibC.StructGroup));
-        gid = entry.gr_gid;
+        catch (Exception)
+        {
+        }
 
         Marshal.FreeHGlobal(resultBuf);
-        resultBuf = IntPtr.Zero;
+        ArrayPool<byte>.Shared.Return(buffer);
 
-        return true;
+        return retval;
+    }
+
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="uid"></param>
+    /// <param name="gid"></param>
+    /// <param name="targetDirectory"></param>
+    /// <param name="errorCount"></param>
+    private void RecurseChown(uint uid,
+                              uint gid,
+                              string targetDirectory,
+                              ref int errorCount)
+    {
+        string[] fileEntries = Directory.GetFiles(targetDirectory);
+        foreach (string fileName in fileEntries)
+        {
+            if (LibC.chown(fileName, uid, gid) != 0)
+            {
+                ++errorCount;
+            }
+        }
+
+        string[] subdirectoryEntries = Directory.GetDirectories(targetDirectory);
+        foreach (string subdirectory in subdirectoryEntries)
+        {
+            RecurseChown(uid, gid, subdirectory, ref errorCount);
+        }
+
+        if (LibC.chown(targetDirectory, uid, gid) != 0)
+        {
+            ++errorCount;
+        }
     }
 
     /// <inheritdoc/>
     public bool Chown(string username, string groupname, string filepath, bool recurse = false)
     {
         uint uid = 0, gid = 0;
-        if (GetUID(username, out uid) && GetGID(groupname, out gid))
+        if (!(GetUID(username, out uid) && GetGID(groupname, out gid)))
         {
-            int n = LibC.chown(filepath, uid, gid);
-            return (n == 0);
+            return false;
         }
-        return false;
+
+        if (recurse)
+        {
+            if (File.Exists(filepath))
+            {
+                return LibC.chown(filepath, uid, gid) == 0;
+            }
+
+            if (Directory.Exists(filepath))
+            {
+                int errorCount = 0;
+                RecurseChown(uid, gid, filepath, ref errorCount);
+                return errorCount == 0;
+            }
+
+            return false;
+        }
+
+        return LibC.chown(filepath, uid, gid) == 0;
     }
 
     /// <summary>
@@ -123,9 +193,11 @@ public class FileOps : IFileOps
     /// <param name="targetDirectory"></param>
     /// <param name="mode"></param>
     /// <param name="errorCount"></param>
-    private void ProcessDirectory(string targetDirectory,
-                                  uint mode,
-                                  ref int errorCount)
+    /// <param name="omitDirectories"></param>
+    private void RecurseChmod(string targetDirectory,
+                              uint mode,
+                              ref int errorCount,
+                              bool omitDirectories)
     {
         string[] fileEntries = Directory.GetFiles(targetDirectory);
         foreach (string fileName in fileEntries)
@@ -139,17 +211,17 @@ public class FileOps : IFileOps
         string[] subdirectoryEntries = Directory.GetDirectories(targetDirectory);
         foreach (string subdirectory in subdirectoryEntries)
         {
-            ProcessDirectory(subdirectory, mode, ref errorCount);
+            RecurseChmod(subdirectory, mode, ref errorCount, omitDirectories);
         }
 
-        if (LibC.chmod(targetDirectory, mode) != 0)
+        if (!omitDirectories && (LibC.chmod(targetDirectory, mode) != 0))
         {
             ++errorCount;
         }
     }
 
     /// <inheritdoc/>
-    public bool Chmod(string pathname, uint mode, bool recurse = false)
+    public bool Chmod(string pathname, uint mode, bool recurse = false, bool omitDirectories = false)
     {
         uint decMode = Oct2Dec(mode);
 
@@ -157,19 +229,19 @@ public class FileOps : IFileOps
         {
             if (File.Exists(pathname))
             {
-                return (LibC.chmod(pathname, decMode) == 0);
+                return LibC.chmod(pathname, decMode) == 0;
             }
 
             if (Directory.Exists(pathname))
             {
                 int errorCount = 0;
-                ProcessDirectory(pathname, decMode, ref errorCount);
-                return (errorCount == 0);
+                RecurseChmod(pathname, decMode, ref errorCount, omitDirectories);
+                return errorCount == 0;
             }
 
             return false;
         }
 
-        return (LibC.chmod(pathname, decMode) == 0);
+        return LibC.chmod(pathname, decMode) == 0;
     }
 }
