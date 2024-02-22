@@ -41,8 +41,8 @@ public interface IFileOps
     /// </summary>
     /// <remarks>
     /// It is possible for this function to return false, if <paramref name="recurse"/> was true, but it encountered a file for which
-    /// the calling user/process did not have permission to change. In this case, all files that were able to be chmoe'd were probably
-    /// chmoe'd, but false will be returned becasue it was unable to chmod them all.
+    /// the calling user/process did not have permission to change. In this case, all files that were able to be chmod'd were probably
+    /// chmod'd, but false will be returned becasue it was unable to chmod them all.
     /// </remarks>
     /// <param name="pathname">The file or directory path to change.</param>
     /// <param name="mode">Octal number representing the bit pattern for the new mode bits. Ex. 755</param>
